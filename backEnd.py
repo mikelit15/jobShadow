@@ -1,5 +1,5 @@
-#https://matching.readthedocs.io/en/latest/discussion/hospital_resident/
-#https://pypi.org/project/matching/
+# https://matching.readthedocs.io/en/latest/discussion/hospital_resident/
+# https://pypi.org/project/matching/
 
 import time     
 from matching.games import HospitalResident                     # pip install matching
@@ -12,11 +12,35 @@ import os
 from more_itertools import collapse                             # pip install more-itertools
 import frontEnd
 
+"""
+Main entry point for backend processing:
+    1. Initialize progress tracking and recursion limit.
+    2. Authenticate and connect to Google Sheets.
+    3. Prepare 'NEWER STUDENTS:' and 'NEWER MENTORS:' worksheets.
+    4. Populate student and host worksheets with formulas based on user-input columns.
+    5. Pause execution for manual column expansion in Sheets.
+    6. Read prepared records into pandas DataFrames.
+    7. Build preference dictionaries and capacities.
+    8. Run three rounds of HospitalResident matching, categorizing outcomes.
+    9. Consolidate matches and write results to new worksheets with color-coded cells.
+    10. Populate global variables for UI statistics.
+
+Args:
+    sheetName (str): Google Sheet title containing raw responses.
+    stdResponses (list[CTkEntry]): Column-letter entry widgets for student data.
+    hostResponses (list[CTkEntry]): Column-letter entry widgets for host data.
+    studentName (str): Worksheet name for student raw responses.
+    hostName (str): Worksheet name for host raw responses.
+"""
 def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
 
     global progress  
 
-    # Progress bar flag #0.075
+    # ----------------------------------------------------------------------------
+    # Progress Initialization (7.5% completion)
+    #
+    # Author: Mike
+    # ----------------------------------------------------------------------------
     for _ in range(30):
         time.sleep(0.02)
         progress += .0025
@@ -24,7 +48,11 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
     start_time = time.time()
     sys.setrecursionlimit(5000)
 
-    # Path for .json for .exe bundle
+    # ----------------------------------------------------------------------------
+    # Google Sheets Authentication
+    # 
+    # Author: Mike
+    # ----------------------------------------------------------------------------
     exe_dir = os.path.dirname(os.path.abspath(__file__))
     data_path = os.path.join(exe_dir, 'cisc498-group2-4f0a0c27d47d.json')   
 
@@ -35,14 +63,24 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
     client = gspread.authorize(credentials)
     spreadsheet = client.open(sheetName) # Nicks BLANK of 2022 Summer Job Shadow Program
     
-    # Returns boolean if a worksheet with title (sheet_name) exists
+    # ----------------------------------------------------------------------------
+    # Worksheet Utility Functions
+    #
+    # Author: Mike
+    # ----------------------------------------------------------------------------
+    """
+    Check if a worksheet with given title exists in the spreadsheet.
+    """
     def doesExist(spreadsheet, sheet_name):
         try:
             spreadsheet.worksheet(sheet_name)
             return True
         except gspread.WorksheetNotFound:
             return False
-        
+    
+    """
+    Convert Excel-style column letters (e.g. 'AB') to 1-based index.
+    """
     def converterStart(start):
         num = 0
         for c in start:
@@ -50,21 +88,25 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
                 num = num * 26 + (ord(c.upper()) - ord('A')) + 1
         return num
     
+    """
+    Compute zero-based offset from a starting column index.
+    """
     def converterOffset(letter, start):
         num = 0
         for c in letter:
             if c.isalpha():
                 num = num * 26 + (ord(c.upper()) - ord('A')) + 1
                 num = num - (start - 1)
-        return num
-    #Draws from given Google Sheet, make new worksheet (NEWER STUDENT) to later draw from
-    '''
-
-    NEWER STUDENTS 
-
-    '''
+        return num        
+        
+    # ----------------------------------------------------------------------------
+    # Prepare 'NEWER STUDENTS:' Worksheet
+    #
+    # Author: Mike
+    # ----------------------------------------------------------------------------
     name = 'NEWER STUDENTS:'
     if(doesExist(spreadsheet, name)):
+        # Delete existing intermediate worksheets to ensure fresh data
         spreadsheet.del_worksheet(spreadsheet.worksheet(name))
         if(doesExist(spreadsheet, "NEWER MENTORS:")):
             spreadsheet.del_worksheet(spreadsheet.worksheet("NEWER MENTORS:"))
@@ -74,58 +116,70 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
             spreadsheet.del_worksheet(spreadsheet.worksheet("Multi-Round: Hosts"))
         if(doesExist(spreadsheet, "Multi-Round Summary")):
             spreadsheet.del_worksheet(spreadsheet.worksheet("Multi-Round Summary"))
+        # Create new blank worksheet for student preprocessing
         spreadsheet.add_worksheet(rows=200,cols=7,title=name)
         sheet_instances = spreadsheet.worksheet(name)
     else:
+        # Create new blank worksheet for student preprocessing
         spreadsheet.add_worksheet(rows=200,cols=7,title=name)
         sheet_instances = spreadsheet.worksheet(name)
 
-    # Progress bar flag #0.075
-    for _ in range(30):
-        time.sleep(0.02)
-        progress += .0025
-
+    # Write header row for student data extraction
     sheet_instances.update('A1', 'EMAILS')
     sheet_instances.update('B1', 'Choice 1')
     sheet_instances.update('C1', 'Choice 2')
     sheet_instances.update('D1', 'Choice 3')
-    sheet_instances.update('E1', 'Industry Areas')##WOULD BE H ANOTHER HOST SHOULD BE E
+    sheet_instances.update('E1', 'Industry Areas') # WOULD BE H ANOTHER HOST SHOULD BE E
     sheet_instances.update('F1', 'SCHOOL YEAR')
     sheet_instances.update('G1', 'MAJOR')
     
-    #stuemails=input('what letter column is UD emailss:\n')
+    ### Inject formulas to extract unique student emails and lookup fields
+    # stuemails=input('what letter column is UD emailss:\n')
     stuEmails=stdResponses[0].get()
     sheet_instances.update_cell(2, 1, '=unique(filter(\'{}\'!${}2:${}1000,\'{}\'!${}2:${}1000<>CHAR(34)))'.format(studentName, stuEmails, stuEmails, studentName, stuEmails, stuEmails))
-    #stuIndu=input('What is the # of columns from UD email to Choice 1 ? example Email is D and Industry is J you should enter 3:\n')
+    
+    # stuIndu=input('What is the # of columns from UD email to Choice 1 ? example Email is D and Industry is J you should enter 3:\n')
     stuStart = converterStart(stuEmails)
     stuChoice1 = converterOffset(stdResponses[1].get(), stuStart)
     sheet_instances.update_cell(2, 2, '=IFERROR(LEFT(VLOOKUP($A2,\'{}\'!${}$2:$Z$999,{},FALSE), FIND(":", VLOOKUP($A2,\'{}\'!${}$2:$Z$999,{},FALSE))-1),0)'.format(studentName, stuEmails, stuChoice1, studentName, stuEmails, stuChoice1))
-    #stuIndu=input('What is the # of columns from UD email to Choice 2? Just Add 1 from Choice 1 response:\n')
+    
+    # stuIndu=input('What is the # of columns from UD email to Choice 2? Just Add 1 from Choice 1 response:\n')
     stuChoice2 = converterOffset(stdResponses[2].get(), stuStart)
     sheet_instances.update_cell(2, 3, '=IFERROR(LEFT(VLOOKUP($A2,\'{}\'!${}$2:$Z$999,{},FALSE), FIND(":", VLOOKUP($A2,\'{}\'!${}$2:$Z$999,{},FALSE))-1),0)'.format(studentName, stuEmails, stuChoice2, studentName, stuEmails, stuChoice2))
-    #stuIndu=input('What is the # of columns from UD email to Choice 3? Just Add 2 from Choice 1 response:\n')
+    
+    # stuIndu=input('What is the # of columns from UD email to Choice 3? Just Add 2 from Choice 1 response:\n')
     stuChoice3 = converterOffset(stdResponses[3].get(), stuStart)
     sheet_instances.update_cell(2, 4, '=IFERROR(LEFT(VLOOKUP($A2,\'{}\'!${}$2:$Z$999,{},FALSE), FIND(":", VLOOKUP($A2,\'{}\'!${}$2:$Z$999,{},FALSE))-1),0)'.format(studentName, stuEmails, stuChoice3, studentName, stuEmails, stuChoice3))
-    #stuIndu=input('What is the # of columns from UD email to Industry Area ? example Email is D and Industry is J you should enter 3:\n')
+    
+    # stuIndu=input('What is the # of columns from UD email to Industry Area ? example Email is D and Industry is J you should enter 3:\n')
     stuIndu = converterOffset(stdResponses[4].get(), stuStart)
     sheet_instances.update_cell(2, 5, '=VLOOKUP($A2,\'{}\'!${}$2:$Z$999,{},FALSE)'.format(studentName, stuEmails, stuIndu))
-    #stuYear=input('What is the # of columns from UD email to School Year? example Email is D and Industry is J you should enter 3:\n')
+    
+    # stuYear=input('What is the # of columns from UD email to School Year? example Email is D and Industry is J you should enter 3:\n')
     stuYear = converterOffset(stdResponses[5].get(), stuStart)
     sheet_instances.update_cell(2, 6, '=VLOOKUP($A2,\'{}\'!${}$2:$Z$999,{},FALSE)'.format(studentName, stuEmails, stuYear))
-    #stuMajor=input('What is the # of columns from UD email to Major? example Email is D and Industry is J you should enter 3:\n')
+    
+    # stuMajor=input('What is the # of columns from UD email to Major? example Email is D and Industry is J you should enter 3:\n')
     stuMajor = converterOffset(stdResponses[6].get(), stuStart)
     sheet_instances.update_cell(2, 7, '=VLOOKUP($A2,\'{}\'!${}$2:$Z$999,{},FALSE)'.format(studentName, stuEmails, stuMajor))
-    print("TEST")
     
-    #Draws from given Google Sheet, make new worksheet (NEWER MENTORS) to later draw from
-    '''
-
-    NEWER MENTORS
+    # ----------------------------------------------------------------------------
+    # Progress Update (15% completion)
+    #
+    # Author: Mike
+    # ----------------------------------------------------------------------------
+    for _ in range(30):
+        time.sleep(0.02)
+        progress += .0025
     
-    '''
-    
+    # ----------------------------------------------------------------------------
+    # Prepare 'NEWER MENTORS:' Worksheet
+    #
+    # Author: Mike
+    # ----------------------------------------------------------------------------
     name = 'NEWER MENTORS:'
     if(doesExist(spreadsheet, name)):
+        # Delete existing intermediate worksheets to ensure fresh data
         spreadsheet.del_worksheet(spreadsheet.worksheet(name))
         if(doesExist(spreadsheet, 'NEWER STUDENTS:')):
             spreadsheet.del_worksheet(spreadsheet.worksheet('NEWER STUDENTS:'))
@@ -135,12 +189,15 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
             spreadsheet.del_worksheet(spreadsheet.worksheet("Matching Round One: Hosts"))
         if(doesExist(spreadsheet, "Matching Round One Summary")):
             spreadsheet.del_worksheet(spreadsheet.worksheet("Matching Round One Summary"))
+        # Create new blank worksheet for student preprocessing
         spreadsheet.add_worksheet(rows=200,cols=9,title=name)
         sheet_instances = spreadsheet.worksheet(name)
     else:
+        # Create new blank worksheet for student preprocessing
         spreadsheet.add_worksheet(rows=200,cols=9,title=name)
         sheet_instances = spreadsheet.worksheet(name)
 
+    # Write header row for student data extraction
     sheet_instances = spreadsheet.worksheet(name)
     sheet_instances.update('A1', 'ID')
     sheet_instances.update('B1', 'EMAILS')
@@ -152,44 +209,58 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
     sheet_instances.update('H1', 'COMPANY NAME')
     sheet_instances.update('I1', 'INTERESTED MAJORS')
     
-    #hostID=input('what letter column is Job IDs:\n')
+    ### Inject formulas to extract unique ID's and lookup fields
+    # hostID=input('what letter column is Job IDs:\n')
     hostID = hostResponses[0].get()
     sheet_instances.update_cell(2, 1, '=unique(filter(\'{}\'!A2:A,\'{}\'!A2:A<>""))'.format(hostName, hostName))
-    #hostEmail=input('What is the # of columns from jobid to email? example ID is A and Email is C you should enter 3:\n')
+    
+    # hostEmail=input('What is the # of columns from jobid to email? example ID is A and Email is C you should enter 3:\n')
     hostStart = converterStart(hostID)
     hostEmail = converterOffset(hostResponses[1].get(), hostStart)
     sheet_instances.update_cell(2, 2, '=VLOOKUP($A2,\'{}\'!${}$2:$AI$999,{},FALSE)'.format(hostName, hostID, hostEmail))
-    #hostIndustry=input('What is the # of columns from jobid to Industry? example ID is A and Email is C you should enter 3:\n')
+    
+    # hostIndustry=input('What is the # of columns from jobid to Industry? example ID is A and Email is C you should enter 3:\n')
     hostIndustry = converterOffset(hostResponses[2].get(), hostStart)
     sheet_instances.update_cell(2, 3, '=VLOOKUP($A2,\'{}\'!${}$2:$AI$999,{},FALSE)'.format(hostName, hostID, hostIndustry))
-    #hostCapacity=input('What is the # of columns from jobid to Capacity? example ID is A and Email is C you should enter 3:\n')
+    
+    # hostCapacity=input('What is the # of columns from jobid to Capacity? example ID is A and Email is C you should enter 3:\n')
     hostCapacity = converterOffset(hostResponses[3].get(), hostStart)
     sheet_instances.update_cell(2, 4, '=VLOOKUP($A2,\'{}\'!${}$2:$AI$999,{},FALSE)'.format(hostName, hostID, hostCapacity))
-    #hostVirtInper=input('What is the # of columns from jobid to Virtual/Inperson? example ID is A and Email is C you should enter 3:\n')
+    
+    # hostVirtInper=input('What is the # of columns from jobid to Virtual/Inperson? example ID is A and Email is C you should enter 3:\n')
     hostVirtInper = converterOffset(hostResponses[4].get(), hostStart)
     sheet_instances.update_cell(2, 5, '=VLOOKUP($A2,\'{}\'!${}$2:$AI$999,{},FALSE)'.format(hostName, hostID, hostVirtInper))
-    #hostPrgmStudy=input('What is the # of columns from jobid to Program of Study? example ID is A and Email is C you should enter 3:\n')
+    
+    # hostPrgmStudy=input('What is the # of columns from jobid to Program of Study? example ID is A and Email is C you should enter 3:\n')
     hostPrgmStudy = converterOffset(hostResponses[5].get(), hostStart)
     sheet_instances.update_cell(2, 6, '=VLOOKUP($A2,\'{}\'!${}$2:$AI$999,{},FALSE)'.format(hostName, hostID, hostPrgmStudy))
-    #hostJobTit=input('What is the # of columns from jobid to Job Title? example ID is A and Email is C you should enter 3:\n')
+    
+    # hostJobTit=input('What is the # of columns from jobid to Job Title? example ID is A and Email is C you should enter 3:\n')
     hostJobTit = converterOffset(hostResponses[6].get(), hostStart)
     sheet_instances.update_cell(2, 7, '=VLOOKUP($A2,\'{}\'!${}$2:$AI$999,{},FALSE)'.format(hostName, hostID, hostJobTit))
-    #hostCompName=input('What is the # of columns from jobid to Company Name? example ID is A and Email is C you should enter 3:\n')
+    
+    # hostCompName=input('What is the # of columns from jobid to Company Name? example ID is A and Email is C you should enter 3:\n')
     hostCompName = converterOffset(hostResponses[7].get(), hostStart)
     sheet_instances.update_cell(2, 8, '=VLOOKUP($A2,\'{}\'!${}$2:$AI$999,{},FALSE)'.format(hostName, hostID, hostCompName))
-    #hostIntMajors=input('What is the # of columns from jobid to Interested Majors? example ID is A and Email is C you should enter 3:\n')
+    
+    # hostIntMajors=input('What is the # of columns from jobid to Interested Majors? example ID is A and Email is C you should enter 3:\n')
     hostIntMajors = converterOffset(hostResponses[8].get(), hostStart)
     sheet_instances.update_cell(2, 9, '=VLOOKUP($A2,\'{}\'!${}$2:$AI$999,{},FALSE)'.format(hostName, hostID, hostIntMajors))
 
-    '''
-
-    '''
-    # Progress bar flag #0.25
+    # ----------------------------------------------------------------------------
+    # Progress Update (40% completion)
+    #
+    # Author: Mike
+    # ----------------------------------------------------------------------------
     for _ in range(50):
         time.sleep(0.04)
-        progress += .005
+        progress += 0.005
 
-    # Opens up a pause window with a continute button, pauses the code so the google sheets can be adjusted before running the rest of the code
+    # ----------------------------------------------------------------------------
+    # Pause Execution for Manual Column Expansion
+    #
+    # Author: Mike
+    # ----------------------------------------------------------------------------
     frontEnd.pause_execution.set(True)
     def continue_code():
         popup.destroy()
@@ -202,7 +273,11 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
     continue_button.pack(pady=10)
     frontEnd.window.wait_variable(frontEnd.pause_execution)
 
-    #From new Google sheet sheets, take in actual data we will use to match
+    # ----------------------------------------------------------------------------
+    # Read Prepared Data into DataFrames
+    #
+    # Author: Mike
+    # ----------------------------------------------------------------------------
     sheet_instance = spreadsheet.worksheet('NEWER STUDENTS:')  # 14 FOR 2022 SUMMER, 18 NEW STUDENTS FOR 2023 Winter
     records_data = sheet_instance.get_all_records()
     student_df = pd.DataFrame.from_dict(records_data)
@@ -210,6 +285,10 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
     records_data = sheet_instance.get_all_records()
     host_df = pd.DataFrame.from_dict(records_data)
 
+    # ----------------------------------------------------------------------------
+    # Author: Not Mike
+    
+    # Filter out invalid rows and set indices
     student_test = student_df.apply(lambda df : True
                 if "@" in df['EMAILS'] else False, axis = 1)
     student_indeces = student_test[student_test == True].index
@@ -227,7 +306,7 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
     host_df.set_index('ID', inplace=True)
     num_students, num_hosts = len(student_df), len(host_df)
     
-    #preset empty host preferences
+    # Initialize preference structures and capacities
     student_prefs = {
         s: []
         for s in student_df.index
@@ -236,13 +315,11 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
         h: []
         for h in host_df.index
     }
-    
-    #Find and take host capacities
     global capacities
     capacities = {h: host_df.at[h, 'Capacity'] for h in host_prefs}
     print(capacities)
     
-    
+    # Helper to merge delivery preferences
     def det_delivery_pref(pref, current_pref):
         if (current_pref == 'Both' or pref == current_pref):
             return current_pref
@@ -255,7 +332,10 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
         s: []
         for s in student_df.index
     }
-    #Go over each student by email, set student and hosts preferences
+    
+    # ----------------------------------------------------------------------------
+    # Build initial preference lists from student choices
+    # ----------------------------------------------------------------------------
     for email in student_df.index:
         for choice in ['Choice 1', 'Choice 2', 'Choice 3']:
             if isinstance(int(student_df.at[email, choice]), int) and (int(student_df.at[email, choice]) >= 0 and int(student_df.at[email, choice]) not in student_prefs[email]):
@@ -267,20 +347,20 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
                 if (email not in host_prefs[student_df.at[email, choice]]):
                     host_prefs[student_df.at[email, choice]].append(email)
     
-    #For ranking student senority, can be changed, this is similar to what they got when they did it by hand
+    # For ranking student senority, can be changed, this is similar to what they got when they did it by hand
     years = {'First Year': 0, 'Sophomore': 1, 'Junior': 2, 'Senior': 4, 'Graduate Student': 1}
     for host in host_prefs:
         host_prefs[host] = sorted(host_prefs[host], key=lambda x: years[student_df.at[x, 'SCHOOL YEAR']], reverse=True)
 
-    #Using HospitalResident from the "" library create and run game which matches based on Hospital residency problem (see link at top)
+    # Using HospitalResident from the "" library create and run game which matches based on Hospital residency problem (see link at top)
     game1 = HospitalResident.create_from_dictionaries(
         student_prefs, host_prefs, capacities
     )
     print(student_prefs)
     roundone = game1.solve()
     print(roundone)
-   
-    #Set empty lists for sorting how the "game1" sorted the students
+
+    # Set empty lists for sorting how the "game1" sorted the students
     gameOne_green_host_list = []
     gameOne_yellow_host_list = []
     gameOne_red_host_list = []
@@ -288,7 +368,7 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
     gameOne_yellow_student_list = []
     gameOne_red_student_list = []
     
-    #This is for setting students and hosts that were matches well together (green; obvious matches), not as well and might need a second look (yellow; less obvious matches),  and ones that werent matched (red)
+    # This is for setting students and hosts that were matches well together (green; obvious matches), not as well and might need a second look (yellow; less obvious matches),  and ones that werent matched (red)
     global gameOne_totalCapacity
     gameOne_totalCapacity = 0
     
@@ -355,7 +435,7 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
         s: []
         for s in student_df.index
     }
-      
+    
     new_a = {}
     for host in roundone:
         new_students = []
@@ -423,11 +503,16 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
     print("___________________________________________________________")
     
     #Round three is basically the same as the previous rounds in function, just the completed from round 2 (along with 1) are now excluded, and the final few are updated
-    #Progress flag #0.225
+    
+    # ----------------------------------------------------------------------------
+    # Progress Initialization (62.5% completion)
+    #
+    # Author: Mike
+    # ----------------------------------------------------------------------------
     for _ in range(45):
         time.sleep(0.04)
         progress += .005
-   
+
     for host in roundtwo:
         if new_capacities[int(host.name)] == len(host.matching):
             completedhosts.append(int(host.name))  
@@ -666,7 +751,11 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
     student_sheet_round1.update('A1', 'STUDENT')  
     student_sheet_round1.update('B1', 'Round 1 : HOST ID')
 
-    #Progress flag #0.225
+    # ----------------------------------------------------------------------------
+    # Progress Initialization (85% completion)
+    #
+    # Author: Mike
+    # ----------------------------------------------------------------------------
     for _ in range(45):
         time.sleep(0.04)
         progress += .005
@@ -946,32 +1035,33 @@ def runCode(sheetName, stdResponses, hostResponses, studentName, hostName):
     }])
     print("All done", time.time() - start_time)     
     
-    # Creates variables to call in updateWindow(), required for stat frame
-    global studentsWithout
-    global studentsWith
-    global totStudents
-    global hostsWith
-    global hostsWithout
-    global totHosts
-    global solidStudents
-    global maybeStudents
-    global totalCap
-    global totalFill
-    studentsWith = len(gameOne_green_student_list) + len(gameOne_yellow_student_list)
-    studentsWithout = len(gameOne_red_student_list)
-    solidStudents = len(gameOne_green_student_list)
-    maybeStudents = len(gameOne_yellow_student_list)
-    hostsWith = len(check)
-    hostsWithout = len(game1.hospitals) - len(check)
-    totStudents = len(game1.residents)
-    totHosts = len(game1.hospitals)
-    totalCap = gameOne_totalCapacity//2
-    totalFill = len(gameOne_yellow_student_list + gameOne_green_student_list + gameTwo_yellow_student_list +
-                        gameTwo_green_student_list + gameThree_yellow_student_list + gameThree_green_student_list)
+    # ----------------------------------------------------------------------------
+    # Populate global statistics for UI display
+    #
+    # Author: Mike
+    # ----------------------------------------------------------------------------
+    global studentsWithout, studentsWith, totStudents
+    global hostsWith, hostsWithout, totHosts
+    global solidStudents, maybeStudents, totalCap, totalFill
+    studentsWith        = len(gameOne_green_student_list) + len(gameOne_yellow_student_list)
+    studentsWithout     = len(gameOne_red_student_list)
+    solidStudents       = len(gameOne_green_student_list)
+    maybeStudents       = len(gameOne_yellow_student_list)
+    hostsWith           = len(check)
+    hostsWithout        = len(game1.hospitals) - len(check)
+    totStudents         = len(game1.residents)
+    totHosts            = len(game1.hospitals)
+    totalCap            = gameOne_totalCapacity//2
+    totalFill           = len(gameOne_yellow_student_list + gameOne_green_student_list + gameTwo_yellow_student_list +
+                                gameTwo_green_student_list + gameThree_yellow_student_list + gameThree_green_student_list)
     
-    print("My program took", time.time() - start_time, "to run")
-    
-    # Progress bar flag #0.15
+    # ----------------------------------------------------------------------------
+    # Final Progress Update (100% completion)
+    #
+    # Author: Mike
+    # ----------------------------------------------------------------------------
     for _ in range(30):
         time.sleep(0.02)
         progress += .005
+    
+    print("Processing complete in", time.time() - start_time, "seconds")
