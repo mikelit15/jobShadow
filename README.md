@@ -10,7 +10,7 @@ Jump To: [Gallery](#gallery)
 ![CISC499 Team 2 Final Presentation_Page_7](https://github.com/user-attachments/assets/eadedab5-939c-4b86-8df7-9e90a2733636)
 ![CISC499 Team 2 Final Presentation_Page_8](https://github.com/user-attachments/assets/4e6a8aba-46aa-43d1-ae98-005d8144a588)
 
-## Gallary
+## Gallery
 *Main UI*<br>
 ![Main UI](https://github.com/user-attachments/assets/e7a567f6-478d-4955-b99f-fe35dd876124)<br>
 ![Main UI2](https://github.com/user-attachments/assets/d3997cdf-4ba5-47d1-a32f-4f5876e2ff10)<br>
